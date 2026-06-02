@@ -60,7 +60,7 @@ const RECOMMEND_SYSTEM = `You are an expert study-abroad advisor with broad know
 HARD CONSTRAINTS — every program you return MUST satisfy all of these:
 1. LEVEL: exactly the level the student is seeking (bachelor or master). Never mix levels.
 2. LANGUAGE: must be taught in English.
-3. FIELD: must be in computer science or engineering (this app only covers those disciplines).
+3. FIELD: must align with the student's stated fields of interest and background, across ANY discipline (e.g. humanities, business, sciences, arts, law, health, engineering — whatever fits the student).
 4. COUNTRY: if the student listed countries, the program must be located in one of them. If they listed none, you may choose any European country.
 Only recommend well-known, real programs at real universities that you are confident actually exist. Do NOT invent programs or universities.
 
@@ -68,7 +68,7 @@ ACCURACY: You are recommending from your own knowledge, so facts (especially tui
 
 TASK: Understand the student's real background (degree, coursework, projects, skills, standing) from whatever was provided, combine it with their stated interests, then select and rank up to 10 best-fit programs. When the background is sparse (no CV), rely more on stated fields and interests. Prefer surfacing at least one strong but non-obvious choice.
 
-For each program write a single-sentence "whyItFits" that references the student's SPECIFIC background or interests — not generic filler. Good: "Their distributed-systems coursework and your kernel project line up with this lab's focus on edge computing." Bad: "This program matches your interest in CS."
+For each program write a single-sentence "whyItFits" that references the student's SPECIFIC background or interests — not generic filler. Good: "Your fieldwork in coastal ecology and stats coursework line up with this program's marine-conservation modelling track." Bad: "This program matches your interest in the field."
 
 Assign a label relative to this student:
 - "reach"  — competitive/selective for this profile
@@ -81,7 +81,7 @@ Return ONLY a JSON array (no prose, no markdown fences) of objects with EXACTLY 
   "university": string,
   "country": string,
   "city": string,
-  "field": string,           // e.g. "Computer Science", "Robotics"
+  "field": string,           // discipline, e.g. "Psychology", "Business", "Computer Science", "Architecture"
   "durationMonths": number,  // typical duration, e.g. 24
   "tuitionNote": string,     // honest, non-authoritative tuition characterization
   "whyItFits": string,       // one specific sentence
@@ -158,7 +158,7 @@ export async function recommendFromCv({
   }
 - Other constraints: ${formValues.otherConstraints || "(none provided)"}
 
-Recommend up to 10 real, English-taught ${formValues.levelSought}-level CS/engineering programs that satisfy every hard constraint above.`;
+Recommend up to 10 real, English-taught ${formValues.levelSought}-level university programs that satisfy every hard constraint above.`;
 
   // Explicitly typed so TS treats the mixed blocks as a ContentBlockParam union.
   const content: Anthropic.ContentBlockParam[] = [];

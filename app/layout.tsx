@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Program Fit Finder",
   description:
-    "Personalized, explained recommendations for European CS & engineering degree programs.",
+    "Personalized, explained recommendations for European university degree programs across any field.",
 };
 
 export default function RootLayout({

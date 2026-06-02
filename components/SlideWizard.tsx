@@ -45,22 +45,24 @@ const COUNTRY_SUGGESTIONS = [
 ];
 
 const FIELD_SUGGESTIONS = [
-  "Artificial Intelligence",
-  "Data Science",
-  "Robotics",
-  "Cybersecurity",
-  "Software Engineering",
+  "Business",
+  "Psychology",
   "Computer Science",
+  "Engineering",
+  "Economics",
+  "Design",
+  "Law",
+  "Biology",
 ];
 
 const SKILL_SUGGESTIONS = [
-  "Python",
-  "Java",
-  "C/C++",
-  "Machine Learning",
-  "Linux",
-  "SQL",
-  "React",
+  "Research",
+  "Writing",
+  "Data analysis",
+  "Public speaking",
+  "Languages",
+  "Project management",
+  "Programming",
   "Statistics",
 ];
 
@@ -110,8 +112,8 @@ export default function SlideWizard({
             </h1>
             <p className="mx-auto mt-3 max-w-md text-slate-600">
               Answer a few quick questions — with or without a CV. We&apos;ll
-              surface a short, ranked list of European CS &amp; engineering
-              programs that actually fit you — each with a reason why and a{" "}
+              surface a short, ranked list of European university programs that
+              actually fit you — across any field — each with a reason why and a{" "}
               <span className="font-medium text-rose-600">reach</span> /{" "}
               <span className="font-medium text-emerald-600">match</span> /{" "}
               <span className="font-medium text-sky-600">safety</span> label.
@@ -214,7 +216,7 @@ export default function SlideWizard({
                       setStepError("");
                     }}
                     rows={4}
-                    placeholder="e.g. Final-year BSc Computer Science at the University of Bologna, GPA ~3.6/4. Strong in algorithms and systems; took electives in machine learning and databases."
+                    placeholder="e.g. Final-year BA Psychology at the University of Bologna, GPA ~3.6/4. Strong in research methods and statistics; took electives in cognitive science and clinical psychology."
                     className="w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-base shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
@@ -244,7 +246,7 @@ export default function SlideWizard({
                   value={data.notableProjects}
                   onChange={(e) => update("notableProjects", e.target.value)}
                   rows={4}
-                  placeholder="e.g. Built a small operating-system kernel for a course; summer internship doing data pipelines; published a class project on graph neural networks."
+                  placeholder="e.g. Led a student research project; summer internship at a local NGO; volunteered as a peer tutor; won a national essay competition."
                   className="w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-base shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 />
               ),

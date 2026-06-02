@@ -6,7 +6,7 @@ export interface Recommendation {
   university: string;
   country: string;
   city: string;
-  field: string; // e.g. "Computer Science", "Robotics", "Data Science"
+  field: string; // discipline, e.g. "Psychology", "Business", "Computer Science"
   durationMonths: number | null;
   tuitionNote: string; // free text — tuition varies by nationality/year; not a single number
   whyItFits: string; // one sentence, references the student's actual profile
