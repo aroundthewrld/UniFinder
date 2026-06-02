@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Program, Recommendation, StudentProfile } from "./types";
+import type { Program, Recommendation } from "./types";
 
 // Default model: multimodal, reads PDFs natively, good cost/quality balance.
 // Swap to an Opus model only if ranking quality demands it.
@@ -55,23 +55,9 @@ function textOf(message: Anthropic.Message): string {
     .join("");
 }
 
-const PROFILE_SYSTEM = `You extract a structured student profile for university-program matching.
-You are given a CV (PDF) and form answers. Return ONLY a JSON object (no prose, no markdown fences) matching this TypeScript type:
+const RECOMMEND_SYSTEM = `You are an expert study-abroad advisor. You are given a student's background (either as a CV PDF, or as typed answers when they have no CV), their form answers, and a list of candidate programs that have ALREADY been pre-filtered in code to match the student's level, English-teaching, and chosen countries. Do not second-guess that filter — only choose from the provided list.
 
-{
-  "levelSought": "bachelor" | "master",
-  "countriesOpenTo": string[],        // empty array = open to any
-  "fieldsOfInterest": string[],
-  "academicBackground": string,       // degree, field, rough standing, institution
-  "skills": string[],
-  "notableProjects": string,          // free text
-  "constraints": { "maxTuitionEurPerYear": number | null, "other": string },
-  "interestsFreeText": string
-}
-
-Infer fields of interest from coursework, projects, and stated interests. If a field is unknown, use an empty array/string or null — never invent credentials, grades, or experience the CV doesn't support. The form answers are authoritative for levelSought, countriesOpenTo, maxTuitionEurPerYear, and the student's own interest text.`;
-
-const RANK_SYSTEM = `You are an expert study-abroad advisor. Given a student profile and a list of candidate programs (already pre-filtered to match level, language, and country), select and rank the ~10 best fits.
+Your job: understand the student's real background (degree, coursework, projects, skills, standing) from whatever was provided, combine it with their stated interests, then select and rank the ~10 best-fit programs from the candidate list. When the background is sparse (no CV), rely more on their stated fields and interests and avoid assuming credentials they didn't mention.
 
 For each chosen program write a single-sentence "whyItFits" that references the student's SPECIFIC background or interests — not generic filler — and draws on that program's distinctiveNote. Good: "Their distributed-systems coursework and your kernel project line up with this lab's focus on edge computing." Bad: "This program matches your interest in CS."
 
@@ -80,19 +66,21 @@ Assign a label:
 - "match"  — a solid, realistic fit
 - "safety" — very likely a fit / below the student's level of competitiveness
 
-Prefer surfacing at least one strong but non-obvious choice. Respect the student's tuition constraint as soft guidance when present.
+Prefer surfacing at least one strong but non-obvious choice. Respect the student's tuition constraint as soft guidance when present. Never invent credentials the CV doesn't support.
 
 Return ONLY a JSON array (no prose, no markdown fences) of objects:
 [{ "programId": string, "whyItFits": string, "label": "reach"|"match"|"safety", "rank": number }]
 
-Use ONLY programIds from the provided list. rank starts at 1 (best). Return at most 10 items.`;
+Use ONLY programIds from the provided candidate list. rank starts at 1 (best). Return at most 10 items.`;
 
-/**
- * LLM call 1 — read the CV PDF (+ form values) and return a StudentProfile.
- * The PDF is passed as a base64 document block to the multimodal model.
- */
-export async function extractProfile(
-  pdfBase64: string,
+export interface RecommendInput {
+  // Provide ONE of these two background sources:
+  pdfBase64?: string; // CV path
+  manualBackground?: {
+    academicBackground: string;
+    skills: string[];
+    notableProjects: string;
+  }; // no-CV path
   formValues: {
     levelSought: string;
     countriesOpenTo: string[];
@@ -100,11 +88,40 @@ export async function extractProfile(
     maxTuitionEurPerYear: number | null;
     interestsFreeText: string;
     otherConstraints: string;
-  }
-): Promise<StudentProfile> {
+  };
+  candidates: Program[];
+}
+
+/**
+ * Single LLM call: student background (CV PDF *or* typed answers) + form answers
+ * + pre-filtered candidate programs → ranked recommendations. The PDF, when
+ * present, is read natively by the multimodal model — no separate
+ * profile-extraction round-trip is needed.
+ */
+export async function recommendFromCv({
+  pdfBase64,
+  manualBackground,
+  formValues,
+  candidates,
+}: RecommendInput): Promise<Recommendation[]> {
   const anthropic = getClient();
 
-  const formText = `Form answers (authoritative where they overlap with the CV):
+  const backgroundText = manualBackground
+    ? `STUDENT BACKGROUND (typed by the student — no CV provided):
+- Academic background: ${manualBackground.academicBackground || "(not provided)"}
+- Skills: ${
+        manualBackground.skills.length
+          ? manualBackground.skills.join(", ")
+          : "(none listed)"
+      }
+- Notable projects / experience: ${
+        manualBackground.notableProjects || "(none provided)"
+      }
+
+`
+    : "";
+
+  const formText = `${backgroundText}STUDENT FORM ANSWERS:
 - Level sought: ${formValues.levelSought}
 - Countries open to: ${
     formValues.countriesOpenTo.length
@@ -114,7 +131,7 @@ export async function extractProfile(
 - Fields of interest: ${
     formValues.fieldsOfInterest.length
       ? formValues.fieldsOfInterest.join(", ")
-      : "(none specified)"
+      : "(none specified — infer from the CV)"
   }
 - Max tuition (EUR/year): ${
     formValues.maxTuitionEurPerYear ?? "(no limit specified)"
@@ -122,58 +139,36 @@ export async function extractProfile(
 - Interests, in the student's own words: ${
     formValues.interestsFreeText || "(none provided)"
   }
-- Other constraints: ${formValues.otherConstraints || "(none provided)"}`;
+- Other constraints: ${formValues.otherConstraints || "(none provided)"}
+
+CANDIDATE PROGRAMS (already filtered to match level, language, and country — choose only from these):
+${JSON.stringify(candidates, null, 2)}`;
 
   // Explicitly typed so TS treats the mixed blocks as a ContentBlockParam union.
-  const content: Anthropic.ContentBlockParam[] = [
-    {
+  const content: Anthropic.ContentBlockParam[] = [];
+  if (pdfBase64) {
+    content.push({
       type: "document",
       source: {
         type: "base64",
         media_type: "application/pdf",
         data: pdfBase64,
       },
-    },
-    { type: "text", text: formText },
-  ];
-
-  const message = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 1500,
-    system: PROFILE_SYSTEM,
-    messages: [{ role: "user", content }],
-  });
-
-  return parseJsonLoose<StudentProfile>(textOf(message));
-}
-
-/**
- * LLM call 2 — rank the hard-filtered survivors in a SINGLE call so the model
- * makes good relative judgments across the whole set.
- */
-export async function rankPrograms(
-  profile: StudentProfile,
-  programs: Program[]
-): Promise<Recommendation[]> {
-  const anthropic = getClient();
-
-  const userText = `STUDENT PROFILE:
-${JSON.stringify(profile, null, 2)}
-
-CANDIDATE PROGRAMS (already filtered to match level, language, and country):
-${JSON.stringify(programs, null, 2)}`;
+    });
+  }
+  content.push({ type: "text", text: formText });
 
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2000,
-    system: RANK_SYSTEM,
-    messages: [{ role: "user", content: userText }],
+    system: RECOMMEND_SYSTEM,
+    messages: [{ role: "user", content }],
   });
 
   const recs = parseJsonLoose<Recommendation[]>(textOf(message));
 
   // Defensive: keep only recs that point at a real, in-scope program.
-  const validIds = new Set(programs.map((p) => p.id));
+  const validIds = new Set(candidates.map((p) => p.id));
   return recs
     .filter(
       (r) => r && typeof r.programId === "string" && validIds.has(r.programId)

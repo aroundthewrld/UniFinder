@@ -5,7 +5,12 @@ import ChipInput from "./ChipInput";
 import CvDropzone from "./CvDropzone";
 
 export interface WizardData {
+  path: "cv" | "manual" | null;
   file: File | null;
+  // Manual-background fields (used when path === "manual", i.e. no CV).
+  academicBackground: string;
+  skills: string[];
+  notableProjects: string;
   levelSought: "bachelor" | "master";
   countries: string[];
   fields: string[];
@@ -15,7 +20,11 @@ export interface WizardData {
 }
 
 const EMPTY: WizardData = {
+  path: null,
   file: null,
+  academicBackground: "",
+  skills: [],
+  notableProjects: "",
   levelSought: "master",
   countries: [],
   fields: [],
@@ -42,6 +51,17 @@ const FIELD_SUGGESTIONS = [
   "Cybersecurity",
   "Software Engineering",
   "Computer Science",
+];
+
+const SKILL_SUGGESTIONS = [
+  "Python",
+  "Java",
+  "C/C++",
+  "Machine Learning",
+  "Linux",
+  "SQL",
+  "React",
+  "Statistics",
 ];
 
 interface Step {
@@ -89,9 +109,9 @@ export default function SlideWizard({
               Program Fit Finder
             </h1>
             <p className="mx-auto mt-3 max-w-md text-slate-600">
-              Answer a few quick questions and upload your CV. We&apos;ll surface a
-              short, ranked list of European CS &amp; engineering programs that
-              actually fit you — each with a reason why and a{" "}
+              Answer a few quick questions — with or without a CV. We&apos;ll
+              surface a short, ranked list of European CS &amp; engineering
+              programs that actually fit you — each with a reason why and a{" "}
               <span className="font-medium text-rose-600">reach</span> /{" "}
               <span className="font-medium text-emerald-600">match</span> /{" "}
               <span className="font-medium text-sky-600">safety</span> label.
@@ -103,23 +123,134 @@ export default function SlideWizard({
         ),
       },
       {
-        key: "cv",
-        title: "Upload your CV",
-        subtitle: "We read it directly to understand your background.",
+        key: "path",
+        title: "Do you have a CV to upload?",
+        subtitle: "Either works — a CV is just the fastest way to tell us about you.",
         validate: () =>
-          data.file ? "" : "Add your CV as a PDF to continue.",
+          data.path ? "" : "Pick one to continue.",
         render: () => (
-          <CvDropzone
-            file={data.file}
-            onFile={(f) => {
-              update("file", f);
-              if (f) setStepError("");
-            }}
-            error={fileError}
-            onError={setFileError}
-          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                {
+                  value: "cv",
+                  icon: "📄",
+                  label: "Yes, upload my CV",
+                  desc: "We read your PDF directly — quickest and most accurate.",
+                },
+                {
+                  value: "manual",
+                  icon: "✍️",
+                  label: "No, I'll answer questions",
+                  desc: "Tell us your background in a few short fields instead.",
+                },
+              ] as const
+            ).map((opt) => {
+              const active = data.path === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    update("path", opt.value);
+                    setStepError("");
+                  }}
+                  className={`rounded-2xl border-2 p-5 text-left transition ${
+                    active
+                      ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100"
+                      : "border-slate-200 bg-white hover:border-indigo-300"
+                  }`}
+                >
+                  <div className="mb-2 text-2xl">{opt.icon}</div>
+                  <span className="block font-semibold text-slate-900">
+                    {opt.label}
+                  </span>
+                  <p className="mt-1 text-sm text-slate-500">{opt.desc}</p>
+                </button>
+              );
+            })}
+          </div>
         ),
       },
+      ...(data.path === "cv"
+        ? [
+            {
+              key: "cv",
+              title: "Upload your CV",
+              subtitle: "We read it directly to understand your background.",
+              validate: () =>
+                data.file ? "" : "Add your CV as a PDF to continue.",
+              render: () => (
+                <CvDropzone
+                  file={data.file}
+                  onFile={(f) => {
+                    update("file", f);
+                    if (f) setStepError("");
+                  }}
+                  error={fileError}
+                  onError={setFileError}
+                />
+              ),
+            },
+          ]
+        : []),
+      ...(data.path === "manual"
+        ? [
+            {
+              key: "academic",
+              title: "Tell us about your studies",
+              subtitle:
+                "Your degree, field, institution, and rough standing (e.g. GPA or grade).",
+              validate: () =>
+                data.academicBackground.trim().length >= 10
+                  ? ""
+                  : "A sentence or two helps a lot — what are you studying, and where?",
+              render: () => (
+                <div>
+                  <textarea
+                    value={data.academicBackground}
+                    onChange={(e) => {
+                      update("academicBackground", e.target.value);
+                      setStepError("");
+                    }}
+                    rows={4}
+                    placeholder="e.g. Final-year BSc Computer Science at the University of Bologna, GPA ~3.6/4. Strong in algorithms and systems; took electives in machine learning and databases."
+                    className="w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-base shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+              ),
+            },
+            {
+              key: "skills",
+              title: "What are your key skills?",
+              subtitle: "Languages, tools, methods — whatever's relevant.",
+              render: () => (
+                <ChipInput
+                  values={data.skills}
+                  onChange={(next) => update("skills", next)}
+                  placeholder="e.g. Python…"
+                  suggestions={SKILL_SUGGESTIONS}
+                  ariaLabel="Your skills"
+                />
+              ),
+            },
+            {
+              key: "projects",
+              title: "Any notable projects or experience?",
+              subtitle:
+                "Optional — internships, research, side projects, competitions.",
+              render: () => (
+                <textarea
+                  value={data.notableProjects}
+                  onChange={(e) => update("notableProjects", e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Built a small operating-system kernel for a course; summer internship doing data pipelines; published a class project on graph neural networks."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white p-4 text-base shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                />
+              ),
+            },
+          ]
+        : []),
       {
         key: "level",
         title: "What level are you applying for?",
@@ -191,7 +322,9 @@ export default function SlideWizard({
         key: "fields",
         title: "What fields interest you?",
         subtitle:
-          "We also infer these from your CV — this just sharpens the ranking.",
+          data.path === "cv"
+            ? "We also infer these from your CV — this just sharpens the ranking."
+            : "Pick the areas you want to study.",
         render: () => (
           <ChipInput
             values={data.fields}
@@ -297,7 +430,24 @@ export default function SlideWizard({
         subtitle: "Here's a quick recap — edit any step by going back.",
         render: () => (
           <dl className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
-            <Row label="CV" value={data.file?.name ?? "—"} />
+            {data.path === "cv" ? (
+              <Row label="CV" value={data.file?.name ?? "—"} />
+            ) : (
+              <>
+                <Row
+                  label="Background"
+                  value={data.academicBackground.trim() || "—"}
+                />
+                <Row
+                  label="Skills"
+                  value={data.skills.length ? data.skills.join(", ") : "—"}
+                />
+                <Row
+                  label="Projects"
+                  value={data.notableProjects.trim() || "—"}
+                />
+              </>
+            )}
             <Row
               label="Level"
               value={
@@ -312,7 +462,13 @@ export default function SlideWizard({
             />
             <Row
               label="Fields"
-              value={data.fields.length ? data.fields.join(", ") : "Inferred from CV"}
+              value={
+                data.fields.length
+                  ? data.fields.join(", ")
+                  : data.path === "cv"
+                    ? "Inferred from CV"
+                    : "—"
+              }
             />
             <Row
               label="Max tuition"
@@ -368,14 +524,21 @@ export default function SlideWizard({
       setStepError(err);
       return;
     }
-    if (!data.file) {
+    if (data.path === "cv" && !data.file) {
       // Jump back to the CV step if somehow missing.
       setStep(1);
       setFileError("Add your CV as a PDF to continue.");
       return;
     }
     const fd = new FormData();
-    fd.set("cv", data.file);
+    fd.set("inputMode", data.path ?? "cv");
+    if (data.path === "cv" && data.file) {
+      fd.set("cv", data.file);
+    } else {
+      fd.set("academicBackground", data.academicBackground.trim());
+      fd.set("skills", data.skills.join(", "));
+      fd.set("notableProjects", data.notableProjects.trim());
+    }
     fd.set("levelSought", data.levelSought);
     fd.set("countriesOpenTo", data.countries.join(", "));
     fd.set("fieldsOfInterest", data.fields.join(", "));

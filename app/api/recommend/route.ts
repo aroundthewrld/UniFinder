@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import programsData from "@/data/programs.json";
 import { hardFilter } from "@/lib/filter";
-import { extractProfile, rankPrograms } from "@/lib/llm";
-import type { Program, RankedProgram, StudentProfile } from "@/lib/types";
+import { recommendFromCv } from "@/lib/llm";
+import type { Program, RankedProgram } from "@/lib/types";
 
 const programs = programsData as Program[];
 
-// PDF parsing + two LLM calls — give the route room to run.
+// One LLM call over a PDF — give the route room to run.
 export const maxDuration = 60;
 
 function parseList(raw: FormDataEntryValue | null): string[] {
@@ -38,42 +38,73 @@ export async function POST(req: Request) {
     );
   }
 
-  // --- Validate the upload ---
-  const file = form.get("cv");
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json(
-      { error: "Please attach a CV as a PDF file." },
-      { status: 400 }
+  const inputMode = form.get("inputMode") === "manual" ? "manual" : "cv";
+
+  // --- Background source: validate the PDF (cv mode) or the typed fields (manual) ---
+  let pdfBase64: string | undefined;
+  let manualBackground:
+    | { academicBackground: string; skills: string[]; notableProjects: string }
+    | undefined;
+
+  if (inputMode === "cv") {
+    const file = form.get("cv");
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json(
+        { error: "Please attach a CV as a PDF file." },
+        { status: 400 }
+      );
+    }
+
+    // Read the bytes up front so we can validate by content, not by the
+    // browser-reported MIME type (Windows often reports an empty or wrong type).
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(await file.arrayBuffer());
+    } catch {
+      return NextResponse.json(
+        { error: "Could not read the uploaded file." },
+        { status: 400 }
+      );
+    }
+
+    // A real PDF starts with "%PDF-" (allowing a few junk bytes some tools prepend).
+    const header = bytes.subarray(0, 1024).toString("latin1");
+    const looksLikePdf = header.includes("%PDF-");
+    console.log(
+      `[recommend] cv upload name=${file.name} type=${file.type || "(none)"} ` +
+        `size=${file.size} looksLikePdf=${looksLikePdf}`
     );
-  }
 
-  // Read the bytes up front so we can validate by content, not by the
-  // browser-reported MIME type (Windows often reports an empty or wrong type).
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(await file.arrayBuffer());
-  } catch {
-    return NextResponse.json(
-      { error: "Could not read the uploaded file." },
-      { status: 400 }
-    );
-  }
+    if (!looksLikePdf) {
+      return NextResponse.json(
+        {
+          error:
+            "That file doesn't look like a PDF. Please export your CV as a PDF and upload that.",
+        },
+        { status: 400 }
+      );
+    }
 
-  // A real PDF starts with "%PDF-" (allowing a few junk bytes some tools prepend).
-  const header = bytes.subarray(0, 1024).toString("latin1");
-  const looksLikePdf = header.includes("%PDF-");
-  console.log(
-    `[recommend] upload name=${file.name} type=${file.type || "(none)"} ` +
-      `size=${file.size} looksLikePdf=${looksLikePdf}`
-  );
-
-  if (!looksLikePdf) {
-    return NextResponse.json(
-      {
-        error:
-          "That file doesn't look like a PDF. Please export your CV as a PDF and upload that.",
-      },
-      { status: 400 }
+    pdfBase64 = bytes.toString("base64");
+  } else {
+    const academicBackground = asString(form.get("academicBackground")).trim();
+    if (academicBackground.length < 10) {
+      return NextResponse.json(
+        {
+          error:
+            "Tell us a little about your studies (your degree, field, and institution) so we can match you.",
+        },
+        { status: 400 }
+      );
+    }
+    manualBackground = {
+      academicBackground,
+      skills: parseList(form.get("skills")),
+      notableProjects: asString(form.get("notableProjects")).trim(),
+    };
+    console.log(
+      `[recommend] manual background chars=${academicBackground.length} ` +
+        `skills=${manualBackground.skills.length}`
     );
   }
 
@@ -90,34 +121,20 @@ export async function POST(req: Request) {
     otherConstraints: asString(form.get("otherConstraints")),
   };
 
-  // --- LLM call 1: CV (+ form) -> StudentProfile ---
-  const pdfBase64 = bytes.toString("base64");
-
-  let profile: StudentProfile;
-  try {
-    profile = await extractProfile(pdfBase64, formValues);
-  } catch (err) {
-    console.error("extractProfile failed:", err);
-    return NextResponse.json(
-      {
-        error:
-          "We couldn't read your CV. Make sure it's a valid PDF and try again.",
-      },
-      { status: 502 }
-    );
-  }
-
-  // Form answers are authoritative for the hard-constraint fields.
-  profile.levelSought = formValues.levelSought;
-  profile.countriesOpenTo = formValues.countriesOpenTo;
-
   // --- Deterministic hard filter (level / language / country) ---
-  const candidates = hardFilter(profile, programs);
+  // Runs first, on the form answers only — so we send the model just the
+  // candidates it's allowed to choose from.
+  const candidates = hardFilter(
+    {
+      levelSought: formValues.levelSought,
+      countriesOpenTo: formValues.countriesOpenTo,
+    },
+    programs
+  );
 
   if (candidates.length === 0) {
     return NextResponse.json(
       {
-        profile,
         recommendations: [],
         message:
           "No programs in the dataset match your level, English-taught requirement, and chosen countries. Try widening your countries or switching the level.",
@@ -126,14 +143,22 @@ export async function POST(req: Request) {
     );
   }
 
-  // --- LLM call 2: single ranking call over the survivors ---
+  // --- Single LLM call: background (PDF or typed) + form + candidates -> ranked ---
   let recommendations;
   try {
-    recommendations = await rankPrograms(profile, candidates);
+    recommendations = await recommendFromCv({
+      pdfBase64,
+      manualBackground,
+      formValues,
+      candidates,
+    });
   } catch (err) {
-    console.error("rankPrograms failed:", err);
+    console.error("recommendFromCv failed:", err);
     return NextResponse.json(
-      { error: "We couldn't rank the programs. Please try again." },
+      {
+        error:
+          "We couldn't generate recommendations. Please try again in a moment.",
+      },
       { status: 502 }
     );
   }
@@ -147,5 +172,5 @@ export async function POST(req: Request) {
     })
     .filter((x): x is RankedProgram => x !== null);
 
-  return NextResponse.json({ profile, recommendations: ranked }, { status: 200 });
+  return NextResponse.json({ recommendations: ranked }, { status: 200 });
 }
