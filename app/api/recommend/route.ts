@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
-import programsData from "@/data/programs.json";
-import { hardFilter } from "@/lib/filter";
 import { recommendFromCv } from "@/lib/llm";
-import type { Program, RankedProgram } from "@/lib/types";
-
-const programs = programsData as Program[];
 
 // One LLM call over a PDF — give the route room to run.
 export const maxDuration = 60;
@@ -121,36 +116,14 @@ export async function POST(req: Request) {
     otherConstraints: asString(form.get("otherConstraints")),
   };
 
-  // --- Deterministic hard filter (level / language / country) ---
-  // Runs first, on the form answers only — so we send the model just the
-  // candidates it's allowed to choose from.
-  const candidates = hardFilter(
-    {
-      levelSought: formValues.levelSought,
-      countriesOpenTo: formValues.countriesOpenTo,
-    },
-    programs
-  );
-
-  if (candidates.length === 0) {
-    return NextResponse.json(
-      {
-        recommendations: [],
-        message:
-          "No programs in the dataset match your level, English-taught requirement, and chosen countries. Try widening your countries or switching the level.",
-      },
-      { status: 200 }
-    );
-  }
-
-  // --- Single LLM call: background (PDF or typed) + form + candidates -> ranked ---
+  // --- Single LLM call: background (PDF or typed) + form -> ranked recommendations ---
+  // The model generates real programs from its own knowledge (no curated dataset).
   let recommendations;
   try {
     recommendations = await recommendFromCv({
       pdfBase64,
       manualBackground,
       formValues,
-      candidates,
     });
   } catch (err) {
     console.error("recommendFromCv failed:", err);
@@ -163,14 +136,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // Join each recommendation with its full program record for rendering.
-  const byId = new Map(candidates.map((p) => [p.id, p]));
-  const ranked: RankedProgram[] = recommendations
-    .map((r) => {
-      const program = byId.get(r.programId);
-      return program ? { ...r, program } : null;
-    })
-    .filter((x): x is RankedProgram => x !== null);
+  if (recommendations.length === 0) {
+    return NextResponse.json(
+      {
+        recommendations: [],
+        message:
+          "We couldn't find programs matching your level, English-taught requirement, and chosen countries. Try widening your countries or adjusting your filters.",
+      },
+      { status: 200 }
+    );
+  }
 
-  return NextResponse.json({ recommendations: ranked }, { status: 200 });
+  return NextResponse.json({ recommendations }, { status: 200 });
 }

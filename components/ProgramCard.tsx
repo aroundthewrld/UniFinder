@@ -1,26 +1,27 @@
-import type { RankedProgram } from "@/lib/types";
+import type { Recommendation } from "@/lib/types";
 
-const LABEL_STYLES: Record<RankedProgram["label"], string> = {
+const LABEL_STYLES: Record<Recommendation["label"], string> = {
   reach: "bg-rose-100 text-rose-700 ring-rose-200",
   match: "bg-emerald-100 text-emerald-700 ring-emerald-200",
   safety: "bg-sky-100 text-sky-700 ring-sky-200",
 };
 
-function tuitionLabel(value: number | null): string {
-  if (value === null) return "Tuition varies / unknown";
-  if (value === 0) return "No tuition fee";
-  return `€${value.toLocaleString("en-US")}/year`;
+// Build a Google search link so users can quickly verify and find the official page.
+function searchUrl(rec: Recommendation): string {
+  const q = `${rec.name} ${rec.university}`.trim();
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
 
 export default function ProgramCard({
   item,
   index = 0,
 }: {
-  item: RankedProgram;
+  item: Recommendation;
   index?: number;
 }) {
-  const { program, whyItFits, label, rank } = item;
+  const { whyItFits, label, rank } = item;
   const badge = LABEL_STYLES[label] ?? LABEL_STYLES.match;
+  const location = [item.city, item.country].filter(Boolean).join(", ");
 
   return (
     <li
@@ -34,10 +35,11 @@ export default function ProgramCard({
           </span>
           <div>
             <h3 className="font-semibold leading-tight text-slate-900">
-              {program.name}
+              {item.name}
             </h3>
             <p className="text-sm text-slate-600">
-              {program.university} · {program.city}, {program.country}
+              {item.university}
+              {location ? ` · ${location}` : ""}
             </p>
           </div>
         </div>
@@ -53,24 +55,28 @@ export default function ProgramCard({
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-        <span>{program.field}</span>
-        <span>·</span>
-        <span>{program.durationMonths} months</span>
-        <span>·</span>
-        <span>{tuitionLabel(program.tuitionEurPerYear)}</span>
-        {program.url ? (
+        {item.field ? <span>{item.field}</span> : null}
+        {item.durationMonths ? (
           <>
             <span>·</span>
-            <a
-              href={program.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-indigo-600 underline underline-offset-2 hover:text-indigo-800"
-            >
-              Program page ↗
-            </a>
+            <span>{item.durationMonths} months</span>
           </>
         ) : null}
+        {item.tuitionNote ? (
+          <>
+            <span>·</span>
+            <span>{item.tuitionNote}</span>
+          </>
+        ) : null}
+        <span>·</span>
+        <a
+          href={searchUrl(item)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-indigo-600 underline underline-offset-2 hover:text-indigo-800"
+        >
+          Find official page ↗
+        </a>
       </div>
     </li>
   );

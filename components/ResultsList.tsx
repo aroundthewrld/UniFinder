@@ -1,4 +1,4 @@
-import type { RankedProgram } from "@/lib/types";
+import type { Recommendation } from "@/lib/types";
 import ProgramCard from "./ProgramCard";
 
 export default function ResultsList({
@@ -6,7 +6,7 @@ export default function ResultsList({
   message,
   onRestart,
 }: {
-  items: RankedProgram[];
+  items: Recommendation[];
   message?: string;
   onRestart: () => void;
 }) {
@@ -21,7 +21,7 @@ export default function ResultsList({
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-amber-800">
           {message ??
-            "Nothing in the dataset matched your level, English-taught requirement, and chosen countries."}
+            "We couldn't find programs matching your level, English-taught requirement, and chosen countries."}
         </p>
         <button
           type="button"
@@ -53,9 +53,24 @@ export default function ResultsList({
           Start over
         </button>
       </div>
+
+      <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <span aria-hidden>ℹ️</span>
+        <span>
+          These programs are <strong>AI-generated suggestions</strong> from the
+          model&apos;s knowledge — names, durations, and especially tuition may be
+          out of date or inexact. Always confirm details on each
+          university&apos;s official page before relying on them.
+        </span>
+      </div>
+
       <ul className="flex flex-col gap-3">
         {items.map((item, i) => (
-          <ProgramCard key={item.programId} item={item} index={i} />
+          <ProgramCard
+            key={`${item.university}-${item.name}-${i}`}
+            item={item}
+            index={i}
+          />
         ))}
       </ul>
     </div>

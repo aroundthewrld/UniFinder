@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import SlideWizard from "@/components/SlideWizard";
 import ResultsList from "@/components/ResultsList";
 import LoadingScreen from "@/components/LoadingScreen";
-import type { RankedProgram } from "@/lib/types";
+import type { Recommendation } from "@/lib/types";
 
 type Phase = "form" | "loading" | "results" | "error";
 
@@ -66,7 +66,7 @@ function explainError(status: number, serverMsg?: string): FriendlyError {
 
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("form");
-  const [results, setResults] = useState<RankedProgram[]>([]);
+  const [results, setResults] = useState<Recommendation[]>([]);
   const [emptyMessage, setEmptyMessage] = useState("");
   const [error, setError] = useState<FriendlyError | null>(null);
   const lastSubmission = useRef<FormData | null>(null);
@@ -80,7 +80,7 @@ export default function Home() {
       const res = await fetch("/api/recommend", { method: "POST", body: data });
 
       let json: {
-        recommendations?: RankedProgram[];
+        recommendations?: Recommendation[];
         message?: string;
         error?: string;
       } = {};
